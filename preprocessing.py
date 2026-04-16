@@ -15,6 +15,7 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 import joblib
+import sys
 
 
 def preprocess(features_csv: str, out_dir: str, test_size: float = 0.2, random_state: int = 42):
@@ -22,9 +23,14 @@ def preprocess(features_csv: str, out_dir: str, test_size: float = 0.2, random_s
 
     # Load
     print(f"Loading {features_csv}...")
+    if not os.path.exists(features_csv):
+        print(f"[ERROR] {features_csv} not found!")
+        print("Run 'python feature_extraction.py' first to generate it.")
+        sys.exit(1)
     df = pd.read_csv(features_csv)
 
-    feature_cols = [c for c in df.columns if c.startswith("feat_")]
+    exclude_cols = ['filename', 'length', 'label']
+    feature_cols = [c for c in df.columns if c not in exclude_cols]
     X = df[feature_cols].values
     y_raw = df["label"].values
 
@@ -38,9 +44,15 @@ def preprocess(features_csv: str, out_dir: str, test_size: float = 0.2, random_s
     print(f"  Classes (encoded): {list(le.classes_)}\n")
 
     # Train / test split (stratified so every genre is balanced)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
-    )
+    if len(np.unique(y)) < 3:
+        print("[WARN] Too few classes for stratified split, using regular split.")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=random_state
+        )
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=random_state, stratify=y
+        )
 
     # Normalize — fit ONLY on training data
     scaler = StandardScaler()
