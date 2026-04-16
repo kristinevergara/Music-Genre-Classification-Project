@@ -17,10 +17,17 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from training_module_fixed import train_nn
+
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+    TF_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARN] TensorFlow not available ({e}). Skipping NN model.")
+    TF_AVAILABLE = False
 
 
 # ── Sklearn models ──────────────────────────────────────────────────────────
@@ -54,8 +61,8 @@ def train_knn(X_train, y_train):
 
 # ── Neural Network ──────────────────────────────────────────────────────────
 
-def build_nn(input_dim: int, num_classes: int) -> tf.keras.Model:
-    model = Sequential([
+    def build_nn(input_dim: int, num_classes: int) -> 'tf.keras.Model':
+        model = Sequential([
         Dense(512, activation='relu', input_shape=(input_dim,)),
         BatchNormalization(),
         Dropout(0.4),
@@ -77,25 +84,25 @@ def build_nn(input_dim: int, num_classes: int) -> tf.keras.Model:
     return model
 
 
-def train_nn(X_train, y_train, X_test, y_test):
-    print("Training Neural Network...")
-    num_classes = len(np.unique(y_train))
-    model = build_nn(X_train.shape[1], num_classes)
+    def train_nn(X_train, y_train, X_test, y_test):
+        print("Training Neural Network...")
+        num_classes = len(np.unique(y_train))
+        model = build_nn(X_train.shape[1], num_classes)
 
-    callbacks = [
-        EarlyStopping(patience=15, restore_best_weights=True, monitor='val_accuracy'),
-        ReduceLROnPlateau(factor=0.5, patience=7, min_lr=1e-5, monitor='val_loss')
-    ]
+        callbacks = [
+            EarlyStopping(patience=15, restore_best_weights=True, monitor='val_accuracy'),
+            ReduceLROnPlateau(factor=0.5, patience=7, min_lr=1e-5, monitor='val_loss')
+        ]
 
-    history = model.fit(
-        X_train, y_train,
-        epochs=200,
-        batch_size=32,
-        validation_data=(X_test, y_test),
-        callbacks=callbacks,
-        verbose=1
-    )
-    return model, history
+        history = model.fit(
+            X_train, y_train,
+            epochs=200,
+            batch_size=32,
+            validation_data=(X_test, y_test),
+            callbacks=callbacks,
+            verbose=1
+        )
+        return model, history
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -139,17 +146,24 @@ def main():
     joblib.dump(knn, os.path.join(args.models_dir, "knn.pkl"))
     print(f"  KNN test accuracy: {knn_acc:.4f}\n")
 
-    # Neural Network
-    nn, history = train_nn(X_train, y_train, X_test, y_test)
-    nn_acc = accuracy_score(y_test, np.argmax(nn.predict(X_test), axis=1))
-    results['Neural Net'] = nn_acc
-    nn.save(os.path.join(args.models_dir, "neural_net.keras"))
 
-    # Save training history for plotting
-    import json
-    with open(os.path.join(args.models_dir, "nn_history.json"), "w") as f:
-        json.dump({k: [float(v) for v in vals] for k, vals in history.history.items()}, f)
-    print(f"  Neural Net test accuracy: {nn_acc:.4f}\n")
+    if TF_AVAILABLE:
+        nn, history = train_nn(X_train, y_train, X_test, y_test)
+        nn_acc = accuracy_score(y_test, np.argmax(nn.predict(X_test), axis=1))
+        results['Neural Net'] = nn_acc
+        nn.save(os.path.join(args.models_dir, "neural_net.keras"))
+            
+        # Save history
+        import json
+        with open(os.path.join(args.models_dir, "nn_history.json"), "w") as f:
+            json.dump({k: [float(v) for v in vals] for k, vals in history.history.items()}, f)
+            print(f"  Neural Net test accuracy: {nn_acc:.4f}\n")
+    else:
+        print("  Neural Net: SKIPPED (TensorFlow unavailable)")
+    
+        
+        
+
 
     # Summary
     print("=" * 40)
