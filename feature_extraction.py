@@ -73,7 +73,8 @@ def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
         zcr_std  = np.std(zcr)
 
         # Tempo
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        tempo_raw, _ = librosa.beat.beat_track(y=y, sr=sr)
+        tempo = float(np.atleast_1d(tempo_raw)[0])
 
         features = np.concatenate([
             mfcc_mean, mfcc_std,
@@ -81,7 +82,7 @@ def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
             [centroid_mean, centroid_std],
             [rolloff_mean,  rolloff_std],
             [zcr_mean,      zcr_std],
-            [float(tempo)]
+            [tempo],
         ])
         return features
 

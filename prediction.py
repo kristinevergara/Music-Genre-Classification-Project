@@ -15,9 +15,14 @@ import os
 import argparse
 import numpy as np
 import joblib
-import tensorflow as tf
-
 import librosa
+
+try:
+    import torch
+    from training_module import GenreNet
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop',
           'jazz', 'metal', 'pop', 'reggae', 'rock']
@@ -34,7 +39,8 @@ def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
     centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
     rolloff  = librosa.feature.spectral_rolloff(y=y, sr=sr)
     zcr      = librosa.feature.zero_crossing_rate(y)
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    tempo_raw, _ = librosa.beat.beat_track(y=y, sr=sr)
+    tempo = float(np.atleast_1d(tempo_raw)[0])
 
     return np.concatenate([
         np.mean(mfccs, axis=1),  np.std(mfccs, axis=1),
@@ -42,7 +48,7 @@ def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
         [np.mean(centroid), np.std(centroid)],
         [np.mean(rolloff),  np.std(rolloff)],
         [np.mean(zcr),      np.std(zcr)],
-        [float(tempo)]
+        [tempo],
     ])
 
 
@@ -67,8 +73,16 @@ def predict_genre(features: np.ndarray, model_key: str) -> dict:
         probs = model.predict_proba(X)[0]
 
     elif model_key == 'nn':
-        model = tf.keras.models.load_model(os.path.join(MODELS_DIR, "neural_net.keras"))
-        probs = model.predict(X, verbose=0)[0]
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch not available — cannot run Neural Net.")
+        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        model = torch.load(os.path.join(MODELS_DIR, "neural_net.pt"),
+                           map_location=device, weights_only=False)
+        model.eval()
+        X_te = torch.tensor(X, dtype=torch.float32).to(device)
+        with torch.no_grad():
+            logits = model(X_te)
+        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
         label = le.inverse_transform([np.argmax(probs)])[0]
 
     else:

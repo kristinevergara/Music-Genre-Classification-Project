@@ -8,6 +8,7 @@ Usage:
 """
 
 import os
+import json
 import argparse
 import numpy as np
 import joblib
@@ -17,24 +18,24 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 
-from training_module_fixed import train_nn
 
 try:
-    import tensorflow as tf
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
-    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-    TF_AVAILABLE = True
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    TORCH_AVAILABLE = True
 except ImportError as e:
-    print(f"[WARN] TensorFlow not available ({e}). Skipping NN model.")
-    TF_AVAILABLE = False
+    print(f"[WARN] PyTorch not available ({e}). Skipping NN model.")
+except Exception as e:
+    TORCH_AVAILABLE = False
+    print(f"[ERROR] Error importing PyTorch: {e}")
 
 
 # ── Sklearn models ──────────────────────────────────────────────────────────
 
 def train_svm(X_train, y_train):
-    print("Training SVM (RBF kernel)...")
-    model = SVC(kernel='rbf', C=10, gamma='scale', probability=True, random_state=42)
+    print("Training SVM ...")
+    model = SVC(kernel='rbf', C=100, gamma='auto', probability=True, random_state=42)
     model.fit(X_train, y_train)
     return model
 
@@ -54,56 +55,113 @@ def train_random_forest(X_train, y_train):
 
 def train_knn(X_train, y_train):
     print("Training KNN (k=5)...")
-    model = KNeighborsClassifier(n_neighbors=5, metric='euclidean', n_jobs=-1)
+    model = KNeighborsClassifier(n_neighbors=5, metric='cosine', n_jobs=-1)
     model.fit(X_train, y_train)
     return model
 
 
 # ── Neural Network ──────────────────────────────────────────────────────────
+class GenreNet(nn.Module):
+    def __init__(self, input_dim: int, num_classes: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 512),
+            nn.ReLU(),
+            nn.BatchNorm1d(512),
+            nn.Dropout(0.4),
 
-    def build_nn(input_dim: int, num_classes: int) -> 'tf.keras.Model':
-        model = Sequential([
-        Dense(512, activation='relu', input_shape=(input_dim,)),
-        BatchNormalization(),
-        Dropout(0.4),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.Dropout(0.3),
 
-        Dense(256, activation='relu'),
-        BatchNormalization(),
-        Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
 
-        Dense(128, activation='relu'),
-        Dropout(0.2),
-
-        Dense(num_classes, activation='softmax')
-    ])
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
-
-
-    def train_nn(X_train, y_train, X_test, y_test):
-        print("Training Neural Network...")
-        num_classes = len(np.unique(y_train))
-        model = build_nn(X_train.shape[1], num_classes)
-
-        callbacks = [
-            EarlyStopping(patience=15, restore_best_weights=True, monitor='val_accuracy'),
-            ReduceLROnPlateau(factor=0.5, patience=7, min_lr=1e-5, monitor='val_loss')
-        ]
-
-        history = model.fit(
-            X_train, y_train,
-            epochs=200,
-            batch_size=32,
-            validation_data=(X_test, y_test),
-            callbacks=callbacks,
-            verbose=1
+            nn.Linear(128, num_classes),
         )
-        return model, history
 
+    def forward(self, x):
+        return self.net(x)
+
+
+def train_nn(X_train, y_train, X_test, y_test, models_dir: str):
+    print("Training Neural Network...")
+
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"  Using device: {device}")
+
+    num_classes = len(np.unique(y_train))
+
+    X_tr = torch.tensor(X_train, dtype=torch.float32)
+    y_tr = torch.tensor(y_train, dtype=torch.long)
+    X_te = torch.tensor(X_test,  dtype=torch.float32)
+    y_te = torch.tensor(y_test,  dtype=torch.long)
+
+    train_loader = DataLoader(
+        TensorDataset(X_tr, y_tr), batch_size=32, shuffle=True
+    )
+
+    model = GenreNet(X_train.shape[1], num_classes).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, patience=7, min_lr=1e-5
+    )
+
+    best_val_acc = 0.0
+    patience_counter = 0
+    patience = 15
+    history = {"train_loss": [], "val_acc": []}
+
+    for epoch in range(100):
+        model.train()
+        epoch_loss = 0.0
+        for xb, yb in train_loader:
+            xb, yb = xb.to(device), yb.to(device)
+            optimizer.zero_grad()
+            loss = criterion(model(xb), yb)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item() * len(xb)
+        epoch_loss /= len(X_train)
+
+        model.eval()
+        with torch.no_grad():
+            logits = model(X_te.to(device))
+            preds = logits.argmax(dim=1).cpu().numpy()
+        val_acc = accuracy_score(y_test, preds)
+
+        scheduler.step(epoch_loss)
+        history["train_loss"].append(epoch_loss)
+        history["val_acc"].append(val_acc)
+
+        if (epoch + 1) % 20 == 0:
+            print(f"  Epoch {epoch+1:3d} | loss {epoch_loss:.4f} | val_acc {val_acc:.4f}")
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), os.path.join(models_dir, "neural_net_best.pt"))
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"  Early stopping at epoch {epoch+1}")
+                break
+
+    model.load_state_dict(torch.load(os.path.join(models_dir, "neural_net_best.pt")))
+    model.eval()
+    with torch.no_grad():
+        preds = model(X_te.to(device)).argmax(dim=1).cpu().numpy()
+    nn_acc = accuracy_score(y_test, preds)
+
+    torch.save(model, os.path.join(models_dir, "neural_net.pt"))
+    with open(os.path.join(models_dir, "nn_history.json"), "w") as f:
+        json.dump(history, f)
+
+    print(f"  Neural Net test accuracy: {nn_acc:.4f}\n")
+    return nn_acc
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
@@ -115,7 +173,6 @@ def main():
 
     os.makedirs(args.models_dir, exist_ok=True)
 
-    # Load preprocessed data
     print("Loading data...")
     X_train = np.load(os.path.join(args.data_dir, "X_train.npy"))
     X_test  = np.load(os.path.join(args.data_dir, "X_test.npy"))
@@ -127,43 +184,27 @@ def main():
 
     # SVM
     svm = train_svm(X_train, y_train)
-    svm_acc = accuracy_score(y_test, svm.predict(X_test))
-    results['SVM'] = svm_acc
+    results['SVM'] = accuracy_score(y_test, svm.predict(X_test))
     joblib.dump(svm, os.path.join(args.models_dir, "svm.pkl"))
-    print(f"  SVM test accuracy: {svm_acc:.4f}\n")
+    print(f"  SVM test accuracy: {results['SVM']:.4f}\n")
 
     # Random Forest
     rf = train_random_forest(X_train, y_train)
-    rf_acc = accuracy_score(y_test, rf.predict(X_test))
-    results['Random Forest'] = rf_acc
+    results['Random Forest'] = accuracy_score(y_test, rf.predict(X_test))
     joblib.dump(rf, os.path.join(args.models_dir, "random_forest.pkl"))
-    print(f"  Random Forest test accuracy: {rf_acc:.4f}\n")
+    print(f"  Random Forest test accuracy: {results['Random Forest']:.4f}\n")
 
     # KNN
     knn = train_knn(X_train, y_train)
-    knn_acc = accuracy_score(y_test, knn.predict(X_test))
-    results['KNN'] = knn_acc
+    results['KNN'] = accuracy_score(y_test, knn.predict(X_test))
     joblib.dump(knn, os.path.join(args.models_dir, "knn.pkl"))
-    print(f"  KNN test accuracy: {knn_acc:.4f}\n")
+    print(f"  KNN test accuracy: {results['KNN']:.4f}\n")
 
-
-    if TF_AVAILABLE:
-        nn, history = train_nn(X_train, y_train, X_test, y_test)
-        nn_acc = accuracy_score(y_test, np.argmax(nn.predict(X_test), axis=1))
-        results['Neural Net'] = nn_acc
-        nn.save(os.path.join(args.models_dir, "neural_net.keras"))
-            
-        # Save history
-        import json
-        with open(os.path.join(args.models_dir, "nn_history.json"), "w") as f:
-            json.dump({k: [float(v) for v in vals] for k, vals in history.history.items()}, f)
-            print(f"  Neural Net test accuracy: {nn_acc:.4f}\n")
+    # Neural Network
+    if TORCH_AVAILABLE:
+        results['Neural Net'] = train_nn(X_train, y_train, X_test, y_test, args.models_dir)
     else:
-        print("  Neural Net: SKIPPED (TensorFlow unavailable)")
-    
-        
-        
-
+        print("[SKIP] Neural Network — PyTorch unavailable.\n")
 
     # Summary
     print("=" * 40)
@@ -171,6 +212,8 @@ def main():
     print("=" * 40)
     for name, acc in sorted(results.items(), key=lambda x: -x[1]):
         print(f"  {name:<20} {acc:.4f}")
+    if not TORCH_AVAILABLE:
+        print(f"  {'Neural Net':<20} skipped (no PyTorch)")
     print("=" * 40)
     print(f"\nAll models saved to: {args.models_dir}/")
 

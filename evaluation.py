@@ -15,14 +15,18 @@ import os
 import json
 import argparse
 import numpy as np
-import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import tensorflow as tf
-from sklearn.metrics import (accuracy_score, f1_score,
-                              classification_report, confusion_matrix)
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
+
+try:
+    import torch
+    from training_module import GenreNet
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop',
           'jazz', 'metal', 'pop', 'reggae', 'rock']
@@ -35,7 +39,7 @@ def load_models(models_dir: str):
     svm_path = os.path.join(models_dir, "svm.pkl")
     rf_path  = os.path.join(models_dir, "random_forest.pkl")
     knn_path = os.path.join(models_dir, "knn.pkl")
-    nn_path  = os.path.join(models_dir, "neural_net.keras")
+    nn_path  = os.path.join(models_dir, "neural_net.pt")
 
     if os.path.exists(svm_path):
         models['SVM'] = joblib.load(svm_path)
@@ -43,15 +47,21 @@ def load_models(models_dir: str):
         models['Random Forest'] = joblib.load(rf_path)
     if os.path.exists(knn_path):
         models['KNN'] = joblib.load(knn_path)
-    if os.path.exists(nn_path):
-        models['Neural Net'] = tf.keras.models.load_model(nn_path)
+    if os.path.exists(nn_path) and TORCH_AVAILABLE:
+        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        model = torch.load(nn_path, map_location=device, weights_only=False)
+        model.eval()
+        models['Neural Net'] = (model, device)
 
     return models
 
-
 def predict(model, X_test, model_name: str):
     if model_name == 'Neural Net':
-        return np.argmax(model.predict(X_test), axis=1)
+        net, device = model
+        X_te = torch.tensor(X_test, dtype=torch.float32).to(device)
+        with torch.no_grad():
+            logits = net(X_te)
+        return logits.argmax(dim=1).cpu().numpy()
     return model.predict(X_test)
 
 
@@ -124,16 +134,14 @@ def plot_nn_training(history_path: str, out_path: str):
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
-    axes[0].plot(history['accuracy'],     label='Train accuracy')
-    axes[0].plot(history['val_accuracy'], label='Val accuracy')
+    axes[0].plot(history['val_acc'], label='Val accuracy')
     axes[0].set_title('Neural Net — Accuracy')
     axes[0].set_xlabel('Epoch')
     axes[0].set_ylabel('Accuracy')
     axes[0].legend()
     axes[0].grid(linestyle='--', alpha=0.4)
 
-    axes[1].plot(history['loss'],     label='Train loss')
-    axes[1].plot(history['val_loss'], label='Val loss')
+    axes[1].plot(history['train_loss'], label='Train loss')
     axes[1].set_title('Neural Net — Loss')
     axes[1].set_xlabel('Epoch')
     axes[1].set_ylabel('Loss')
