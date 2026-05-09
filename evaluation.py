@@ -11,6 +11,8 @@ Usage:
     python evaluation.py --data_dir ./data --models_dir ./models --out_dir ./results
 """
 
+# https://seaborn.pydata.org/generated/seaborn.heatmap.html
+
 import os
 import json
 import argparse
@@ -32,21 +34,15 @@ GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop',
           'jazz', 'metal', 'pop', 'reggae', 'rock']
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 def load_models(models_dir: str):
     models = {}
-    svm_path = os.path.join(models_dir, "svm.pkl")
-    rf_path  = os.path.join(models_dir, "random_forest.pkl")
-    knn_path = os.path.join(models_dir, "knn.pkl")
-    nn_path  = os.path.join(models_dir, "neural_net.pt")
+    sklearn_files = {'SVM': 'svm.pkl', 'Random Forest': 'random_forest.pkl', 'KNN': 'knn.pkl'}
+    for name, fname in sklearn_files.items():
+        path = os.path.join(models_dir, fname)
+        if os.path.exists(path):
+            models[name] = joblib.load(path)
 
-    if os.path.exists(svm_path):
-        models['SVM'] = joblib.load(svm_path)
-    if os.path.exists(rf_path):
-        models['Random Forest'] = joblib.load(rf_path)
-    if os.path.exists(knn_path):
-        models['KNN'] = joblib.load(knn_path)
+    nn_path  = os.path.join(models_dir, "neural_net.pt")
     if os.path.exists(nn_path) and TORCH_AVAILABLE:
         device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
         model = torch.load(nn_path, map_location=device, weights_only=False)
@@ -65,21 +61,12 @@ def predict(model, X_test, model_name: str):
     return model.predict(X_test)
 
 
-# ── Plots ─────────────────────────────────────────────────────────────────────
+# Plots 
 
 def plot_confusion_matrix(y_true, y_pred, model_name: str, out_path: str):
     cm = confusion_matrix(y_true, y_pred)
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.heatmap(
-        cm,
-        annot=True,
-        fmt='d',
-        cmap='Blues',
-        xticklabels=GENRES,
-        yticklabels=GENRES,
-        ax=ax,
-        linewidths=0.5
-    )
+    _, ax = plt.subplots()
+    sns.heatmap(cm,annot=True,fmt='d',cmap='Blues',xticklabels=GENRES,yticklabels=GENRES,ax=ax,linewidths=0.5)
     ax.set_title(f'Confusion Matrix — {model_name}', fontsize=14, pad=16)
     ax.set_xlabel('Predicted', fontsize=12)
     ax.set_ylabel('Actual',    fontsize=12)
@@ -90,73 +77,40 @@ def plot_confusion_matrix(y_true, y_pred, model_name: str, out_path: str):
     plt.close()
     print(f"  Saved: {out_path}")
 
-
 def plot_model_comparison(results: dict, out_path: str):
-    names   = list(results.keys())
-    acc     = [results[n]['accuracy'] for n in names]
-    f1      = [results[n]['f1']       for n in names]
+    names = list(results.keys())
+    acc = [results[n]['accuracy'] for n in names]
+    f1  = [results[n]['f1'] for n in names]
 
     x = np.arange(len(names))
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(9, 5))
-    bars1 = ax.bar(x - width/2, acc, width, label='Accuracy', color='steelblue',  alpha=0.85)
-    bars2 = ax.bar(x + width/2, f1,  width, label='F1 Score', color='darkorange', alpha=0.85)
-
-    ax.set_ylim(0, 1.05)
+    _, ax = plt.subplots()
+    ax.bar(x - 0.2, acc, 0.4, label='Accuracy')
+    ax.bar(x + 0.2, f1,  0.4, label='F1 Score')
     ax.set_xticks(x)
-    ax.set_xticklabels(names, fontsize=11)
-    ax.set_ylabel('Score', fontsize=12)
-    ax.set_title('Model Performance Comparison', fontsize=14, pad=14)
-    ax.legend(fontsize=11)
-    ax.grid(axis='y', linestyle='--', alpha=0.4)
-
-    for bar in bars1:
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                f'{bar.get_height():.3f}', ha='center', va='bottom', fontsize=9)
-    for bar in bars2:
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                f'{bar.get_height():.3f}', ha='center', va='bottom', fontsize=9)
-
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    ax.set_xticklabels(names)
+    ax.legend()
+    plt.savefig(out_path)
     plt.close()
     print(f"  Saved: {out_path}")
-
 
 def plot_nn_training(history_path: str, out_path: str):
     if not os.path.exists(history_path):
         print("  [SKIP] nn_history.json not found, skipping training curves.")
         return
-
     with open(history_path) as f:
         history = json.load(f)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-
-    axes[0].plot(history['val_acc'], label='Val accuracy')
-    axes[0].set_title('Neural Net — Accuracy')
-    axes[0].set_xlabel('Epoch')
-    axes[0].set_ylabel('Accuracy')
-    axes[0].legend()
-    axes[0].grid(linestyle='--', alpha=0.4)
-
-    axes[1].plot(history['train_loss'], label='Train loss')
-    axes[1].set_title('Neural Net — Loss')
-    axes[1].set_xlabel('Epoch')
-    axes[1].set_ylabel('Loss')
-    axes[1].legend()
-    axes[1].grid(linestyle='--', alpha=0.4)
-
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    _, axes = plt.subplots(1,2)
+    axes[0].plot(history['val_acc'])
+    axes[0].set_title('Accuracy')
+    axes[1].plot(history['train_loss'])
+    axes[1].set_title('Loss')
+    plt.savefig(out_path)
     plt.close()
     print(f"  Saved: {out_path}")
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
-
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate music genre classifiers.")
     parser.add_argument("--data_dir",   type=str, default="./data")
     parser.add_argument("--models_dir", type=str, default="./models")
@@ -168,12 +122,8 @@ def main():
     # Load data
     X_test  = np.load(os.path.join(args.data_dir, "X_test.npy"))
     y_test  = np.load(os.path.join(args.data_dir, "y_test.npy"))
+    le = joblib.load(os.path.join(args.data_dir, "label_encoder.pkl"))
 
-    # Load label encoder
-    le_path = os.path.join(args.data_dir, "label_encoder.pkl")
-    le = joblib.load(le_path) if os.path.exists(le_path) else None
-
-    # Load models
     models = load_models(args.models_dir)
     print(f"Loaded models: {list(models.keys())}\n")
 
@@ -192,8 +142,8 @@ def main():
         plot_confusion_matrix(y_test, preds, name, cm_path)
 
         # Classification report
-        target_names = le.classes_ if le else [str(i) for i in range(10)]
-        print(classification_report(y_test, preds, target_names=target_names))
+        print(classification_report(y_test, preds, target_names=le.classes_))
+
 
     # Comparison chart
     comparison_path = os.path.join(args.out_dir, "model_comparison.png")
@@ -203,16 +153,3 @@ def main():
     nn_curves_path  = os.path.join(args.out_dir, "nn_training_curves.png")
     nn_history_path = os.path.join(args.models_dir, "nn_history.json")
     plot_nn_training(nn_history_path, nn_curves_path)
-
-    # Final summary table
-    print("\n" + "=" * 50)
-    print(f"  {'Model':<20}  {'Accuracy':>10}  {'F1 Score':>10}")
-    print("=" * 50)
-    for name, scores in sorted(results.items(), key=lambda x: -x[1]['accuracy']):
-        print(f"  {name:<20}  {scores['accuracy']:>10.4f}  {scores['f1']:>10.4f}")
-    print("=" * 50)
-    print(f"\nAll results saved to: {args.out_dir}/")
-
-
-if __name__ == "__main__":
-    main()
