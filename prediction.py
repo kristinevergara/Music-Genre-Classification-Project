@@ -15,7 +15,8 @@ import os
 import argparse
 import numpy as np
 import joblib
-import librosa
+import sys
+from feature_extraction import extract_features
 
 try:
     import torch
@@ -24,32 +25,8 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop',
-          'jazz', 'metal', 'pop', 'reggae', 'rock']
-
 DATA_DIR   = "./data"
 MODELS_DIR = "./models"
-
-
-def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
-    y, sr = librosa.load(file_path, duration=30, mono=True)
-
-    mfccs    = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
-    chroma   = librosa.feature.chroma_stft(y=y, sr=sr)
-    centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
-    rolloff  = librosa.feature.spectral_rolloff(y=y, sr=sr)
-    zcr      = librosa.feature.zero_crossing_rate(y)
-    tempo_raw, _ = librosa.beat.beat_track(y=y, sr=sr)
-    tempo = float(np.atleast_1d(tempo_raw)[0])
-
-    return np.concatenate([
-        np.mean(mfccs, axis=1),  np.std(mfccs, axis=1),
-        np.mean(chroma, axis=1), np.std(chroma, axis=1),
-        [np.mean(centroid), np.std(centroid)],
-        [np.mean(rolloff),  np.std(rolloff)],
-        [np.mean(zcr),      np.std(zcr)],
-        [tempo],
-    ])
 
 
 def predict_genre(features: np.ndarray, model_key: str) -> dict:
@@ -57,24 +34,15 @@ def predict_genre(features: np.ndarray, model_key: str) -> dict:
     le     = joblib.load(os.path.join(DATA_DIR, "label_encoder.pkl"))
     X = scaler.transform(features.reshape(1, -1))
 
-    if model_key == 'svm':
-        model = joblib.load(os.path.join(MODELS_DIR, "svm.pkl"))
+    sklearn_files = {'svm': 'svm.pkl', 'rf':  'random_forest.pkl', 'knn': 'knn.pkl'}
+
+    if model_key in sklearn_files:
+        model = joblib.load(os.path.join(MODELS_DIR, sklearn_files[model_key]))
         label = le.inverse_transform(model.predict(X))[0]
         probs = model.predict_proba(X)[0]
-
-    elif model_key == 'rf':
-        model = joblib.load(os.path.join(MODELS_DIR, "random_forest.pkl"))
-        label = le.inverse_transform(model.predict(X))[0]
-        probs = model.predict_proba(X)[0]
-
-    elif model_key == 'knn':
-        model = joblib.load(os.path.join(MODELS_DIR, "knn.pkl"))
-        label = le.inverse_transform(model.predict(X))[0]
-        probs = model.predict_proba(X)[0]
-
     elif model_key == 'nn':
         if not TORCH_AVAILABLE:
-            raise RuntimeError("PyTorch not available — cannot run Neural Net.")
+            raise RuntimeError("PyTorch not available.")
         device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
         model = torch.load(os.path.join(MODELS_DIR, "neural_net.pt"),
                            map_location=device, weights_only=False)
@@ -93,7 +61,7 @@ def predict_genre(features: np.ndarray, model_key: str) -> dict:
     return {'prediction': label, 'confidence': float(max(probs)), 'top3': top3}
 
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict genre of an audio file.")
     parser.add_argument("--file",  type=str, required=True, help="Path to .wav file")
     parser.add_argument("--model", type=str, default="svm",
@@ -103,7 +71,7 @@ def main():
 
     if not os.path.exists(args.file):
         print(f"Error: file not found — {args.file}")
-        return
+        sys.exit(1)
 
     print(f"Extracting features from: {args.file}")
     features = extract_features(args.file)
@@ -125,7 +93,3 @@ def main():
             print()
         except Exception as e:
             print(f"  [{key}] Error: {e}\n")
-
-
-if __name__ == "__main__":
-    main()

@@ -1,11 +1,15 @@
 """
-training module.py
+training_module.py
 Trains SVM, Random Forest, KNN, and a Feedforward Neural Network
 on the preprocessed feature splits. Saves all trained models to ./models/.
 
 Usage:
     python training module.py --data_dir ./data --models_dir ./models
 """
+
+# References:
+# 1. https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
+# 2. https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
 
 import os
 import json
@@ -25,30 +29,25 @@ try:
     from torch.utils.data import DataLoader, TensorDataset
     TORCH_AVAILABLE = True
 except ImportError as e:
+    TORCH_AVAILABLE = False
     print(f"[WARN] PyTorch not available ({e}). Skipping NN model.")
 except Exception as e:
     TORCH_AVAILABLE = False
     print(f"[ERROR] Error importing PyTorch: {e}")
 
 
-# ── Sklearn models ──────────────────────────────────────────────────────────
+# Sklearn models
 
 def train_svm(X_train, y_train):
     print("Training SVM ...")
-    model = SVC(kernel='rbf', C=100, gamma='auto', probability=True, random_state=42)
+    model = SVC(C=100, kernel='rbf', gamma='scale', probability=True, random_state=42)
     model.fit(X_train, y_train)
     return model
 
 
 def train_random_forest(X_train, y_train):
     print("Training Random Forest...")
-    model = RandomForestClassifier(
-        n_estimators=300,
-        max_depth=None,
-        min_samples_split=2,
-        random_state=42,
-        n_jobs=-1
-    )
+    model = RandomForestClassifier(n_estimators=300, max_depth=None, min_samples_split=2, random_state=42, n_jobs=-1)
     model.fit(X_train, y_train)
     return model
 
@@ -60,7 +59,7 @@ def train_knn(X_train, y_train):
     return model
 
 
-# ── Neural Network ──────────────────────────────────────────────────────────
+# Neural Network 
 class GenreNet(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
@@ -97,7 +96,6 @@ def train_nn(X_train, y_train, X_test, y_test, models_dir: str):
     X_tr = torch.tensor(X_train, dtype=torch.float32)
     y_tr = torch.tensor(y_train, dtype=torch.long)
     X_te = torch.tensor(X_test,  dtype=torch.float32)
-    y_te = torch.tensor(y_test,  dtype=torch.long)
 
     train_loader = DataLoader(
         TensorDataset(X_tr, y_tr), batch_size=32, shuffle=True
@@ -106,9 +104,7 @@ def train_nn(X_train, y_train, X_test, y_test, models_dir: str):
     model = GenreNet(X_train.shape[1], num_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, patience=7, min_lr=1e-5
-    )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=7, min_lr=1e-5)
 
     best_val_acc = 0.0
     patience_counter = 0
@@ -138,7 +134,7 @@ def train_nn(X_train, y_train, X_test, y_test, models_dir: str):
         history["val_acc"].append(val_acc)
 
         if (epoch + 1) % 20 == 0:
-            print(f"  Epoch {epoch+1:3d} | loss {epoch_loss:.4f} | val_acc {val_acc:.4f}")
+            print(f"  Epoch {epoch+1:3d} | loss {epoch_loss:.2f} | val_acc {val_acc:.2f}")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -163,9 +159,8 @@ def train_nn(X_train, y_train, X_test, y_test, models_dir: str):
     print(f"  Neural Net test accuracy: {nn_acc:.4f}\n")
     return nn_acc
 
-# ── Main ────────────────────────────────────────────────────────────────────
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train music genre classifiers.")
     parser.add_argument("--data_dir",   type=str, default="./data")
     parser.add_argument("--models_dir", type=str, default="./models")
@@ -216,7 +211,3 @@ def main():
         print(f"  {'Neural Net':<20} skipped (no PyTorch)")
     print("=" * 40)
     print(f"\nAll models saved to: {args.models_dir}/")
-
-
-if __name__ == "__main__":
-    main()
