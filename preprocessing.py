@@ -34,25 +34,15 @@ def preprocess(features_csv: str, out_dir: str, test_size: float = 0.2, random_s
     X = df[feature_cols].values
     y_raw = df["label"].values
 
-    print(f"  Total samples : {len(X)}")
-    print(f"  Feature count : {X.shape[1]}")
-    print(f"  Class distribution:\n{pd.Series(y_raw).value_counts().to_string()}\n")
+    print(f"  Samples: {len(X)}, Features: {X.shape[1]}")
 
     # Encode labels
     le = LabelEncoder()
     y = le.fit_transform(y_raw)
-    print(f"  Classes (encoded): {list(le.classes_)}\n")
 
     # Train / test split (stratified so every genre is balanced)
-    if len(np.unique(y)) < 3:
-        print("[WARN] Too few classes for stratified split, using regular split.")
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state
-        )
-    else:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=y
-        )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+
 
     # Normalize — fit ONLY on training data
     scaler = StandardScaler()
@@ -74,7 +64,7 @@ def preprocess(features_csv: str, out_dir: str, test_size: float = 0.2, random_s
     print(f"\nAll files saved to: {out_dir}/")
 
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preprocess features for model training.")
     parser.add_argument("--features",    type=str,   default="features.csv")
     parser.add_argument("--out_dir",     type=str,   default="./data")
@@ -83,7 +73,3 @@ def main():
     args = parser.parse_args()
 
     preprocess(args.features, args.out_dir, args.test_size, args.random_state)
-
-
-if __name__ == "__main__":
-    main()
