@@ -16,7 +16,7 @@ import argparse
 import numpy as np
 import joblib
 import sys
-from feature_extraction import extract_features
+from data_preparation import extract_features
 
 try:
     import torch
