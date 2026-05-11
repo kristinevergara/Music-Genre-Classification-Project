@@ -9,7 +9,7 @@ import os
 import sys
 import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from feature_extraction import extract_features, GENRES
+from data_preparation import extract_features, GENRES
 import torch
 from training_module import GenreNet
 
