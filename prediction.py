@@ -1,16 +1,3 @@
-"""
-prediction.py
-Classify a single audio file using a trained model.
-
-Usage:
-    python prediction.py --file path/to/song.wav
-    python prediction.py --file song.wav --model svm        (default)
-    python prediction.py --file song.wav --model rf
-    python prediction.py --file song.wav --model knn
-    python prediction.py --file song.wav --model nn
-    python prediction.py --file song.wav --model all        (run all models)
-"""
-
 import os
 import argparse
 import numpy as np
@@ -76,20 +63,21 @@ if __name__ == "__main__":
     print(f"Extracting features from: {args.file}")
     features = extract_features(args.file)
 
-    model_keys = ["svm", "rf", "knn", "nn"] if args.model == "all" else [args.model]
-    model_names = {"svm": "SVM", "rf": "Random Forest", "knn": "KNN", "nn": "Neural Net"}
+    choices = {"svm": "SVM", "rf": "Random Forest", "knn": "KNN", "nn": "Neural Net"}
+    keys = list(choices.keys()) if args.model == "all" else [args.model]
 
     print()
-    for key in model_keys:
+    for key in keys:
         try:
             result = predict_genre(features, key)
-            print(f"── {model_names[key]} ──────────────────────")
+            print(f"── {choices[key]} ──────────────────────")
             print(f"  Prediction : {result['prediction'].upper()}")
             print(f"  Confidence : {result['confidence']*100:.1f}%")
             print(f"  Top 3:")
             for genre, prob in result['top3']:
-                bar = '█' * int(prob * 20)
-                print(f"    {genre:<12} {prob*100:5.1f}%  {bar}")
+                print(f"    {genre:<12} {prob*100:5.1f}%")
             print()
+        except FileNotFoundError:
+            print(f"  [{key}] Model file not found, skipping.")
         except Exception as e:
-            print(f"  [{key}] Error: {e}\n")
+            raise

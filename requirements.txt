@@ -1,26 +1,21 @@
-# Core dependencies
 numpy==2.1.0
 pandas==2.2.3
 scipy==1.14.1
 
-# Machine Learning
+
 scikit-learn==1.5.2
 #tensorflow==2.13.0
 torch==2.6.0
 joblib==1.4.2
 
-# Audio Processing
 librosa==0.10.2
 soundfile==0.12.1
 audioread==3.0.1
 
-# Visualization
 matplotlib==3.9.2
 seaborn==0.13.2
 
-# Utilities
 tqdm==4.66.5
 
-# Testing
 pytest==8.3.3
 flake8==7.1.1

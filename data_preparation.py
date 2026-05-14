@@ -1,12 +1,3 @@
-"""
-prepare_data.py
-Extracts audio features from the GTZAN dataset and saves
-train/test splits to .npy files for model training.
-
-Usage:
-    python prepare_data.py --data_dir ./gtzan --out_dir ./data
-"""
-
 import os
 import argparse
 import numpy as np
@@ -23,49 +14,31 @@ GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop',
 
 
 def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
-    """
-    Extract a fixed-length feature vector from a .wav file.
-
-    Features extracted:
-        - MFCCs: mean + std of 40 coefficients  → 80 values
-        - Chroma STFT: mean + std of 12 bins     → 24 values
-        - Spectral centroid: mean + std           →  2 values
-        - Spectral roll-off: mean + std           →  2 values
-        - Zero crossing rate: mean + std          →  2 values
-        - Tempo                                   →  1 value
-    Total: 111 features
-    """
     try:
         y, sr = librosa.load(file_path, duration=30, mono=True)
 
-        # MFCCs
         mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
         mfcc_mean = np.mean(mfccs, axis=1)
         mfcc_std  = np.std(mfccs,  axis=1)
 
-        # Chroma
         chroma = librosa.feature.chroma_stft(y=y, sr=sr)
         chroma_mean = np.mean(chroma, axis=1)
         chroma_std  = np.std(chroma,  axis=1)
 
-        # Spectral centroid
         centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
         centroid_mean = np.mean(centroid)
         centroid_std  = np.std(centroid)
 
-        # Spectral roll-off
         rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
         rolloff_mean = np.mean(rolloff)
         rolloff_std  = np.std(rolloff)
 
-        # Zero crossing rate
         zcr = librosa.feature.zero_crossing_rate(y)
         zcr_mean = np.mean(zcr)
         zcr_std  = np.std(zcr)
 
-        # Tempo
-        tempo_raw, _ = librosa.beat.beat_track(y=y, sr=sr)
-        tempo = float(np.atleast_1d(tempo_raw)[0])
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        tempo = float(tempo) 
 
         features = np.concatenate([
             mfcc_mean, mfcc_std,
@@ -111,37 +84,29 @@ def build_dataset(data_dir: str, n_mfcc: int = 40) -> pd.DataFrame:
 def preprocess(df: pd.DataFrame, out_dir: str, test_size: float = 0.2, random_state: int = 42):
     os.makedirs(out_dir, exist_ok=True)
 
-    exclude_cols = ['filename', 'length', 'label']
-    feature_cols = []
-    for c in df.columns:
-        if c not in exclude_cols:
-            feature_cols.append(c)
+    exclude_cols = ['filename', 'label']
+    feature_cols = [c for c in df.columns if c not in exclude_cols]
     X = df[feature_cols].values
-    y_raw = df["label"].values
+    y = df["label"].values
 
     print(f"  Samples: {len(X)}, Features: {X.shape[1]}")
 
-    # Encode labels
     le = LabelEncoder()
-    y = le.fit_transform(y_raw)
+    y = le.fit_transform(y)
 
-    # Train / test split (stratified so every genre is balanced)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    # Normalize — fit ONLY on training data
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test  = scaler.transform(X_test)
 
-    # Save splits
     np.save(os.path.join(out_dir, "X_train.npy"), X_train)
     np.save(os.path.join(out_dir, "X_test.npy"),  X_test)
     np.save(os.path.join(out_dir, "y_train.npy"), y_train)
     np.save(os.path.join(out_dir, "y_test.npy"),  y_test)
 
-    # Save scaler and encoder for inference later
     joblib.dump(scaler, os.path.join(out_dir, "scaler.pkl"))
     joblib.dump(le,     os.path.join(out_dir, "label_encoder.pkl"))
 

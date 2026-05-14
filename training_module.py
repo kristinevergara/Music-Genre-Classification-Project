@@ -1,42 +1,18 @@
-"""
-training_module.py
-Trains SVM, Random Forest, KNN, and a Feedforward Neural Network
-on the preprocessed feature splits. Saves all trained models to ./models/.
-
-Usage:
-    python training module.py --data_dir ./data --models_dir ./models
-"""
-
-# References:
-# 1. https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
-# 2. https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
+# https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
+# https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
 
 import os
 import json
 import argparse
 import numpy as np
 import joblib
-
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
-
-
-try:
-    import torch
-    import torch.nn as nn
-    from torch.utils.data import DataLoader, TensorDataset
-    TORCH_AVAILABLE = True
-except ImportError as e:
-    TORCH_AVAILABLE = False
-    print(f"[WARN] PyTorch not available ({e}). Skipping NN model.")
-except Exception as e:
-    TORCH_AVAILABLE = False
-    print(f"[ERROR] Error importing PyTorch: {e}")
-
-
-# Sklearn models
 
 def train_svm(X_train, y_train):
     print("Training SVM ...")
@@ -196,18 +172,13 @@ if __name__ == "__main__":
     print(f"  KNN test accuracy: {results['KNN']:.4f}\n")
 
     # Neural Network
-    if TORCH_AVAILABLE:
-        results['Neural Net'] = train_nn(X_train, y_train, X_test, y_test, args.models_dir)
-    else:
-        print("[SKIP] Neural Network — PyTorch unavailable.\n")
+    results['Neural Net'] = train_nn(X_train, y_train, X_test, y_test, args.models_dir)
 
     # Summary
     print("=" * 40)
     print("  Model accuracy summary")
     print("=" * 40)
-    for name, acc in sorted(results.items(), key=lambda x: -x[1]):
+    for name, acc in sorted(results.items(), key=lambda x: x[1], reverse=True):
         print(f"  {name:<20} {acc:.4f}")
-    if not TORCH_AVAILABLE:
-        print(f"  {'Neural Net':<20} skipped (no PyTorch)")
     print("=" * 40)
     print(f"\nAll models saved to: {args.models_dir}/")

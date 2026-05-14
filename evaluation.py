@@ -1,16 +1,3 @@
-"""
-evaluation.py
-Loads all trained models, runs predictions on the test set,
-and produces:
-  - Per-model confusion matrix heatmaps  (confusion_<model>.png)
-  - Accuracy + F1 comparison bar chart   (model_comparison.png)
-  - Neural network training curves       (nn_training_curves.png)
-  - Full classification report in console
-
-Usage:
-    python evaluation.py --data_dir ./data --models_dir ./models --out_dir ./results
-"""
-
 # https://seaborn.pydata.org/generated/seaborn.heatmap.html
 
 import os
@@ -20,15 +7,9 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
-
-try:
-    import torch
-    from training_module import GenreNet
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+import torch
+from training_module import GenreNet
 
 GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop',
           'jazz', 'metal', 'pop', 'reggae', 'rock']
@@ -43,37 +24,34 @@ def load_models(models_dir: str):
             models[name] = joblib.load(path)
 
     nn_path  = os.path.join(models_dir, "neural_net.pt")
-    if os.path.exists(nn_path) and TORCH_AVAILABLE:
+    if os.path.exists(nn_path):
         device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
         model = torch.load(nn_path, map_location=device, weights_only=False)
         model.eval()
-        models['Neural Net'] = (model, device)
+        models['Neural Net'] = model
 
     return models
 
 def predict(model, X_test, model_name: str):
     if model_name == 'Neural Net':
-        net, device = model
+        device = next(model.parameters()).device
         X_te = torch.tensor(X_test, dtype=torch.float32).to(device)
         with torch.no_grad():
-            logits = net(X_te)
+            logits = model(X_te)
         return logits.argmax(dim=1).cpu().numpy()
     return model.predict(X_test)
 
-
-# Plots 
-
 def plot_confusion_matrix(y_true, y_pred, model_name: str, out_path: str):
     cm = confusion_matrix(y_true, y_pred)
-    _, ax = plt.subplots()
-    sns.heatmap(cm,annot=True,fmt='d',cmap='Blues',xticklabels=GENRES,yticklabels=GENRES,ax=ax,linewidths=0.5)
-    ax.set_title(f'Confusion Matrix — {model_name}', fontsize=14, pad=16)
-    ax.set_xlabel('Predicted', fontsize=12)
-    ax.set_ylabel('Actual',    fontsize=12)
+    _, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=GENRES, yticklabels=GENRES, ax=ax)
+    ax.set_title(f'Confusion Matrix - {model_name}')
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('Actual')
     plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
     plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"  Saved: {out_path}")
 
@@ -83,15 +61,12 @@ def plot_model_comparison(results: dict, out_path: str):
     f1  = [results[n]['f1'] for n in names]
 
     x = np.arange(len(names))
-    _, ax = plt.subplots()
-    ax.bar(x - 0.2, acc, 0.4, label='Accuracy')
-    ax.bar(x + 0.2, f1,  0.4, label='F1 Score')
-    ax.set_xticks(x)
-    ax.set_xticklabels(names)
-    ax.legend()
+    plt.bar(x - 0.2, acc, 0.4, label='Accuracy')
+    plt.bar(x + 0.2, f1,  0.4, label='F1 Score')
+    plt.xticks(x, names)
+    plt.legend()
     plt.savefig(out_path)
     plt.close()
-    print(f"  Saved: {out_path}")
 
 def plot_nn_training(history_path: str, out_path: str):
     if not os.path.exists(history_path):
@@ -100,12 +75,19 @@ def plot_nn_training(history_path: str, out_path: str):
     with open(history_path) as f:
         history = json.load(f)
 
-    _, axes = plt.subplots(1,2)
-    axes[0].plot(history['val_acc'])
-    axes[0].set_title('Accuracy')
-    axes[1].plot(history['train_loss'])
-    axes[1].set_title('Loss')
-    plt.savefig(out_path)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    axes[0].plot(history['train_loss'])
+    axes[0].set_title('Training Loss')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Loss')
+
+    axes[1].plot(history['val_acc'])
+    axes[1].set_title('Validation Accuracy')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Accuracy')
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"  Saved: {out_path}")
 
