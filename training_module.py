@@ -16,7 +16,7 @@ from sklearn.metrics import accuracy_score
 
 def train_svm(X_train, y_train):
     print("Training SVM ...")
-    model = SVC(C=100, kernel='rbf', gamma='scale', probability=True, random_state=42)
+    model = SVC(C=10, kernel='rbf', gamma='auto', probability=True, random_state=42)
     model.fit(X_train, y_train)
     return model
 
@@ -35,7 +35,6 @@ def train_knn(X_train, y_train):
     return model
 
 
-# Neural Network 
 class GenreNet(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
@@ -43,7 +42,7 @@ class GenreNet(nn.Module):
             nn.Linear(input_dim, 512),
             nn.ReLU(),
             nn.BatchNorm1d(512),
-            nn.Dropout(0.4),
+            nn.Dropout(0.3),
 
             nn.Linear(512, 256),
             nn.ReLU(),
@@ -74,17 +73,17 @@ def train_nn(X_train, y_train, X_test, y_test, models_dir: str):
     X_te = torch.tensor(X_test,  dtype=torch.float32)
 
     train_loader = DataLoader(
-        TensorDataset(X_tr, y_tr), batch_size=32, shuffle=True
+        TensorDataset(X_tr, y_tr), batch_size=64, shuffle=True
     )
 
     model = GenreNet(X_train.shape[1], num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=7, min_lr=1e-5)
 
     best_val_acc = 0.0
     patience_counter = 0
-    patience = 15
+    patience = 25
     history = {"train_loss": [], "val_acc": []}
 
     for epoch in range(100):
@@ -153,32 +152,25 @@ if __name__ == "__main__":
 
     results = {}
 
-    # SVM
+    
     svm = train_svm(X_train, y_train)
     results['SVM'] = accuracy_score(y_test, svm.predict(X_test))
     joblib.dump(svm, os.path.join(args.models_dir, "svm.pkl"))
     print(f"  SVM test accuracy: {results['SVM']:.4f}\n")
 
-    # Random Forest
     rf = train_random_forest(X_train, y_train)
     results['Random Forest'] = accuracy_score(y_test, rf.predict(X_test))
     joblib.dump(rf, os.path.join(args.models_dir, "random_forest.pkl"))
     print(f"  Random Forest test accuracy: {results['Random Forest']:.4f}\n")
 
-    # KNN
     knn = train_knn(X_train, y_train)
     results['KNN'] = accuracy_score(y_test, knn.predict(X_test))
     joblib.dump(knn, os.path.join(args.models_dir, "knn.pkl"))
     print(f"  KNN test accuracy: {results['KNN']:.4f}\n")
 
-    # Neural Network
     results['Neural Net'] = train_nn(X_train, y_train, X_test, y_test, args.models_dir)
 
-    # Summary
-    print("=" * 40)
     print("  Model accuracy summary")
-    print("=" * 40)
     for name, acc in sorted(results.items(), key=lambda x: x[1], reverse=True):
         print(f"  {name:<20} {acc:.4f}")
-    print("=" * 40)
     print(f"\nAll models saved to: {args.models_dir}/")

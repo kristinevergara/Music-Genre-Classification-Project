@@ -44,7 +44,7 @@ def predict_genre(features: np.ndarray, model_key: str) -> dict:
         raise ValueError(f"Unknown model key: {model_key}")
 
     classes = le.classes_
-    top3 = sorted(zip(classes, probs), key=lambda x: -x[1])[:3]
+    top3 = sorted(zip(classes, probs), key=lambda x: x[1], reverse=True)[:3]
     return {'prediction': label, 'confidence': float(max(probs)), 'top3': top3}
 
 
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     for key in keys:
         try:
             result = predict_genre(features, key)
-            print(f"── {choices[key]} ──────────────────────")
+            print(f"{choices[key]}")
             print(f"  Prediction : {result['prediction'].upper()}")
             print(f"  Confidence : {result['confidence']*100:.1f}%")
             print(f"  Top 3:")

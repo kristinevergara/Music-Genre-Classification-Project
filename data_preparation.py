@@ -1,7 +1,6 @@
 import os
 import argparse
 import numpy as np
-import pandas as pd
 import librosa
 import joblib
 import sys
@@ -55,39 +54,28 @@ def extract_features(file_path: str, n_mfcc: int = 40) -> np.ndarray:
         return None
 
 
-def build_dataset(data_dir: str, n_mfcc: int = 40) -> pd.DataFrame:
-    rows = []
+def build_dataset(data_dir: str, n_mfcc: int = 40):
+    X_rows, y_rows = [], []
     for genre in GENRES:
         genre_path = os.path.join(data_dir, genre)
         if not os.path.isdir(genre_path):
             print(f"[WARN] Directory not found: {genre_path}")
             continue
 
-        files = []
-        for f in os.listdir(genre_path):
-            if f.endswith('.wav'):
-                files.append(f)
+        files = [f for f in os.listdir(genre_path) if f.endswith('.wav')]
         print(f"Processing {genre} ({len(files)} files)...")
 
         for fname in tqdm(files, desc=f"  {genre}", leave=False):
-            fpath = os.path.join(genre_path, fname)
-            feats = extract_features(fpath, n_mfcc=n_mfcc)
+            feats = extract_features(os.path.join(genre_path, fname), n_mfcc=n_mfcc)
             if feats is not None:
-                row = {"label": genre, "filename": fname}
-                for i, v in enumerate(feats):
-                    row[f"feat_{i}"] = v
-                rows.append(row)
+                X_rows.append(feats)
+                y_rows.append(genre)
 
-    return pd.DataFrame(rows)
+    return np.array(X_rows), np.array(y_rows)
 
 
-def preprocess(df: pd.DataFrame, out_dir: str, test_size: float = 0.2, random_state: int = 42):
+def preprocess(X: np.ndarray, y: np.ndarray, out_dir: str, test_size: float = 0.2, random_state: int = 42):
     os.makedirs(out_dir, exist_ok=True)
-
-    exclude_cols = ['filename', 'label']
-    feature_cols = [c for c in df.columns if c not in exclude_cols]
-    X = df[feature_cols].values
-    y = df["label"].values
 
     print(f"  Samples: {len(X)}, Features: {X.shape[1]}")
 
@@ -117,7 +105,7 @@ def preprocess(df: pd.DataFrame, out_dir: str, test_size: float = 0.2, random_st
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract features and preprocess for model training.")
-    parser.add_argument("--data_dir",    type=str,   default="./gtzan")
+    parser.add_argument("--data_dir",    type=str,   default="./Data/genres_original")
     parser.add_argument("--out_dir",     type=str,   default="./data")
     parser.add_argument("--n_mfcc",      type=int,   default=40)
     parser.add_argument("--test_size",   type=float, default=0.2)
@@ -125,8 +113,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(f"Extracting features from: {args.data_dir}")
-    df = build_dataset(args.data_dir, n_mfcc=args.n_mfcc)
-    print(f"\nDataset shape: {df.shape}")
+    X, y = build_dataset(args.data_dir, n_mfcc=args.n_mfcc)
+    print(f"\nDataset shape: {X.shape}")
 
     print("\nPreprocessing...")
-    preprocess(df, args.out_dir, args.test_size, args.random_state)
+    preprocess(X, y, args.out_dir, args.test_size, args.random_state)

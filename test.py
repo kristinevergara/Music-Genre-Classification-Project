@@ -16,9 +16,7 @@ class TestFeatureExtraction:
         assert len(GENRES) == 10
  
     def test_extract_features_returns_none_for_invalid_file(self):
-        result = extract_features("nonexistent_file.wav")
-        if result is not None:
-            assert extract_features("nonexistent_file.wav") is None
+        assert extract_features("nonexistent_file.wav") is None
 
 
 class TestTrainingModule:

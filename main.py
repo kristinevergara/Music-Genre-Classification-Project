@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score, f1_score, classification_report
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir",    type=str, default="./gtzan")
+    parser.add_argument("--data_dir",    type=str, default="./Data/genres_original")
     parser.add_argument("--out_dir",     type=str, default="./data")
     parser.add_argument("--models_dir",  type=str, default="./models")
     parser.add_argument("--results_dir", type=str, default="./results")
@@ -24,8 +24,8 @@ if __name__ == "__main__":
 
 
     print("Extracting features...")
-    df = build_dataset(args.data_dir)
-    preprocess(df, args.out_dir)
+    X, y = build_dataset(args.data_dir)
+    preprocess(X, y, args.out_dir)
 
     print("\nLoading preprocessed data...")
     X_train = np.load(os.path.join(args.out_dir, "X_train.npy"))

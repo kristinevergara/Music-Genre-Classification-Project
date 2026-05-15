@@ -64,6 +64,8 @@ def plot_model_comparison(results: dict, out_path: str):
     plt.bar(x - 0.2, acc, 0.4, label='Accuracy')
     plt.bar(x + 0.2, f1,  0.4, label='F1 Score')
     plt.xticks(x, names)
+    plt.title('Model Comparison')
+    plt.ylabel('Score')
     plt.legend()
     plt.savefig(out_path)
     plt.close()
@@ -101,7 +103,6 @@ if __name__ == "__main__":
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # Load data
     X_test  = np.load(os.path.join(args.data_dir, "X_test.npy"))
     y_test  = np.load(os.path.join(args.data_dir, "y_test.npy"))
     le = joblib.load(os.path.join(args.data_dir, "label_encoder.pkl"))
@@ -119,19 +120,14 @@ if __name__ == "__main__":
         f1  = f1_score(y_test, preds, average='weighted')
         results[name] = {'accuracy': acc, 'f1': f1}
 
-        # Confusion matrix
         cm_path = os.path.join(args.out_dir, f"confusion_{name.lower().replace(' ', '_')}.png")
         plot_confusion_matrix(y_test, preds, name, cm_path)
-
-        # Classification report
         print(classification_report(y_test, preds, target_names=le.classes_))
 
 
-    # Comparison chart
     comparison_path = os.path.join(args.out_dir, "model_comparison.png")
     plot_model_comparison(results, comparison_path)
 
-    # Neural network training curves
     nn_curves_path  = os.path.join(args.out_dir, "nn_training_curves.png")
     nn_history_path = os.path.join(args.models_dir, "nn_history.json")
     plot_nn_training(nn_history_path, nn_curves_path)
